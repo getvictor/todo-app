@@ -54,8 +54,9 @@ func InitTelemetry(ctx context.Context) (shutdown func(context.Context) error, e
 	otlpEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 
 	if otlpEndpoint != "" {
+		fmt.Printf("Connecting to OTLP endpoint: %s\n", otlpEndpoint)
 		// Use OTLP exporter for production
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		conn, err := grpc.DialContext(ctx, otlpEndpoint,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -90,7 +91,7 @@ func InitTelemetry(ctx context.Context) (shutdown func(context.Context) error, e
 
 	if otlpEndpoint != "" {
 		// Use OTLP exporter for production
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		conn, err := grpc.DialContext(ctx, otlpEndpoint,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -124,7 +125,7 @@ func InitTelemetry(ctx context.Context) (shutdown func(context.Context) error, e
 
 	if otlpEndpoint != "" {
 		// Use OTLP exporter for production
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		conn, err := grpc.DialContext(ctx, otlpEndpoint,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
