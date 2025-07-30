@@ -24,8 +24,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 func InitTelemetry(ctx context.Context) (shutdown func(context.Context) error, err error) {
@@ -58,15 +56,11 @@ func InitTelemetry(ctx context.Context) (shutdown func(context.Context) error, e
 		// Use OTLP exporter for production
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		conn, err := grpc.DialContext(ctx, otlpEndpoint,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
-		)
-		if err != nil {
-			return shutdown, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
-		}
 
-		traceExporter, err = otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
+		traceExporter, err = otlptracegrpc.New(ctx,
+			otlptracegrpc.WithEndpoint(otlpEndpoint),
+			otlptracegrpc.WithInsecure(),
+		)
 		if err != nil {
 			return shutdown, fmt.Errorf("failed to create OTLP trace exporter: %w", err)
 		}
@@ -93,15 +87,11 @@ func InitTelemetry(ctx context.Context) (shutdown func(context.Context) error, e
 		// Use OTLP exporter for production
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		conn, err := grpc.DialContext(ctx, otlpEndpoint,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
-		)
-		if err != nil {
-			return shutdown, fmt.Errorf("failed to create gRPC connection for metrics: %w", err)
-		}
 
-		metricExporter, err = otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(conn))
+		metricExporter, err = otlpmetricgrpc.New(ctx,
+			otlpmetricgrpc.WithEndpoint(otlpEndpoint),
+			otlpmetricgrpc.WithInsecure(),
+		)
 		if err != nil {
 			return shutdown, fmt.Errorf("failed to create OTLP metric exporter: %w", err)
 		}
@@ -127,15 +117,11 @@ func InitTelemetry(ctx context.Context) (shutdown func(context.Context) error, e
 		// Use OTLP exporter for production
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		conn, err := grpc.DialContext(ctx, otlpEndpoint,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithBlock(),
-		)
-		if err != nil {
-			return shutdown, fmt.Errorf("failed to create gRPC connection for logs: %w", err)
-		}
 
-		logExporter, err = otlploggrpc.New(ctx, otlploggrpc.WithGRPCConn(conn))
+		logExporter, err = otlploggrpc.New(ctx,
+			otlploggrpc.WithEndpoint(otlpEndpoint),
+			otlploggrpc.WithInsecure(),
+		)
 		if err != nil {
 			return shutdown, fmt.Errorf("failed to create OTLP log exporter: %w", err)
 		}
@@ -161,12 +147,12 @@ func InitTelemetry(ctx context.Context) (shutdown func(context.Context) error, e
 	return shutdown, nil
 }
 
-// Helper function to get tracer
+// GetTracer returns the OpenTelemetry tracer for the todo-app
 func GetTracer() trace.Tracer {
 	return otel.Tracer("todo-app")
 }
 
-// Helper function to get meter
+// GetMeter returns the OpenTelemetry meter for the todo-app
 func GetMeter() metric.Meter {
 	return otel.Meter("todo-app")
 }

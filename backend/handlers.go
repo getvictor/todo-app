@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 
 type Handlers struct {
 	db              *DB
+	httpClient      *HTTPClient
 	requestCounter  metric.Int64Counter
 	requestDuration metric.Float64Histogram
 }
@@ -34,6 +37,7 @@ func NewHandlers(db *DB) *Handlers {
 
 	return &Handlers{
 		db:              db,
+		httpClient:      NewHTTPClient(),
 		requestCounter:  requestCounter,
 		requestDuration: requestDuration,
 	}
@@ -137,6 +141,9 @@ func (h *Handlers) CreateTask(w http.ResponseWriter, r *http.Request) {
 		h.recordRequestMetrics(ctx, start, "POST", "/tasks", http.StatusInternalServerError)
 		return
 	}
+
+	// Make external API call to httpbin.org
+	h.notifyExternalAPI(ctx, task)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -259,4 +266,53 @@ func (h *Handlers) recordRequestMetrics(ctx context.Context, start time.Time, me
 
 	h.requestCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
 	h.requestDuration.Record(ctx, float64(duration), metric.WithAttributes(attrs...))
+}
+
+// notifyExternalAPI makes an external API call to httpbin.org after task creation
+func (h *Handlers) notifyExternalAPI(ctx context.Context, task *Task) {
+	// Create a new span for the external API call
+	ctx, span := GetTracer().Start(ctx, "external.api.notification",
+		trace.WithAttributes(
+			attribute.String("api.service", "httpbin.org"),
+			attribute.Int("task.id", task.ID),
+			attribute.String("task.title", task.Title),
+		))
+	defer span.End()
+
+	// Prepare the request with properly encoded parameters
+	params := url.Values{}
+	params.Add("task_id", fmt.Sprintf("%d", task.ID))
+	params.Add("task_title", task.Title)
+	apiURL := fmt.Sprintf("https://httpbin.org/get?%s", params.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		span.RecordError(err)
+		slog.ErrorContext(ctx, "Failed to create external API request", "error", err)
+		return
+	}
+
+	// Add custom headers
+	req.Header.Set("X-Task-ID", fmt.Sprintf("%d", task.ID))
+	req.Header.Set("X-Task-Title", task.Title)
+	req.Header.Set("User-Agent", "todo-app/1.0")
+
+	// Make the request with body capture
+	resp, err := h.httpClient.DoWithBodyCapture(ctx, req)
+	if err != nil {
+		span.RecordError(err)
+		slog.ErrorContext(ctx, "External API call failed", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		slog.InfoContext(ctx, "Successfully notified external API",
+			"task_id", task.ID,
+			"status_code", resp.StatusCode)
+	} else {
+		slog.WarnContext(ctx, "External API returned non-success status",
+			"task_id", task.ID,
+			"status_code", resp.StatusCode)
+	}
 }

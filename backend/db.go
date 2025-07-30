@@ -14,7 +14,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
-	
+	"go.opentelemetry.io/otel/trace"
 )
 
 type DB struct {
