@@ -3,10 +3,18 @@ package main
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"fmt"
+	"runtime/debug"
+	"strings"
 
+	"github.com/XSAM/otelsql"
 	_ "github.com/mattn/go-sqlite3"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
+	
 )
 
 type DB struct {
@@ -14,7 +22,51 @@ type DB struct {
 }
 
 func NewDB(dataSourceName string) (*DB, error) {
-	conn, err := sql.Open("sqlite3", dataSourceName)
+	// Register the otelsql wrapper for sqlite3
+	driverName, err := otelsql.Register("sqlite3",
+		otelsql.WithAttributes(
+			semconv.DBSystemSqlite,
+			attribute.String("db.name", "tasks.db"),
+		),
+		otelsql.WithTracerProvider(otel.GetTracerProvider()),
+		otelsql.WithMeterProvider(otel.GetMeterProvider()),
+		otelsql.WithSQLCommenter(true),
+		otelsql.WithSpanOptions(otelsql.SpanOptions{
+			// Only create spans when there's an existing parent span
+			SpanFilter: func(ctx context.Context, method otelsql.Method, query string, args []driver.NamedValue) bool {
+				// Check if there's a valid parent span in the context
+				return trace.SpanFromContext(ctx).SpanContext().IsValid()
+			},
+		}),
+		otelsql.WithAttributesGetter(func(ctx context.Context, method otelsql.Method, query string, args []driver.NamedValue) []attribute.KeyValue {
+			// Format the query with actual values instead of placeholders
+			formattedQuery := formatQueryWithArgs(query, args)
+			return []attribute.KeyValue{
+				attribute.String("db.statement.formatted", formattedQuery),
+			}
+		}),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Open the database with the instrumented driver
+	conn, err := sql.Open(driverName, dataSourceName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Configure connection pool for better observability
+	conn.SetMaxOpenConns(10)
+	conn.SetMaxIdleConns(5)
+
+	// Register database statistics metrics
+	err = otelsql.RegisterDBStatsMetrics(conn,
+		otelsql.WithAttributes(
+			semconv.DBSystemSqlite,
+			attribute.String("db.name", "tasks.db"),
+		),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +127,41 @@ func (db *DB) CreateTask(ctx context.Context, title string) (*Task, error) {
 			attribute.String("task.title", title),
 		))
 	defer span.End()
+
+	// Dummy error for demonstration purposes
+	if title == "errorTest" {
+		err := fmt.Errorf("simulated database error: cannot create task with title 'errorTest'")
+
+		// Capture stack trace
+		stackTrace := string(debug.Stack())
+
+		// Record error with stack trace
+		span.RecordError(err, trace.WithStackTrace(true))
+		span.SetStatus(codes.Error, err.Error())
+		span.SetAttributes(
+			attribute.String("error.type", "SimulatedError"),
+			attribute.Bool("error.simulated", true),
+			attribute.String("exception.stacktrace", stackTrace),
+		)
+
+		// Add an event with the stack trace for better visibility
+		span.AddEvent("error.with.stacktrace",
+			trace.WithAttributes(
+				attribute.String("error.message", err.Error()),
+				attribute.String("stack.trace", stackTrace),
+			),
+		)
+
+		return nil, err
+	}
+
 	query := `INSERT INTO tasks (title) VALUES (?) RETURNING id, title, completed, created_at`
 
 	task := &Task{}
 	err := db.conn.QueryRowContext(ctx, query, title).Scan(&task.ID, &task.Title, &task.Completed, &task.CreatedAt)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 
@@ -131,4 +213,49 @@ func (db *DB) CompleteTask(ctx context.Context, id int) (*Task, error) {
 
 func (db *DB) Close() error {
 	return db.conn.Close()
+}
+
+// formatQueryWithArgs replaces SQL placeholders with actual values for better observability
+func formatQueryWithArgs(query string, args []driver.NamedValue) string {
+	if len(args) == 0 {
+		return query
+	}
+
+	formattedQuery := query
+	for i, arg := range args {
+		placeholder := "?"
+		if strings.Contains(query, "$") {
+			// PostgreSQL style placeholders
+			placeholder = fmt.Sprintf("$%d", i+1)
+		}
+
+		var value string
+		if arg.Value == nil {
+			value = "NULL"
+		} else {
+			switch v := arg.Value.(type) {
+			case string:
+				value = fmt.Sprintf("'%s'", v)
+			case []byte:
+				value = fmt.Sprintf("'%s'", string(v))
+			case int64, int32, int16, int8, int:
+				value = fmt.Sprintf("%d", v)
+			case float64, float32:
+				value = fmt.Sprintf("%f", v)
+			case bool:
+				if v {
+					value = "TRUE"
+				} else {
+					value = "FALSE"
+				}
+			default:
+				value = fmt.Sprintf("%v", v)
+			}
+		}
+
+		// Replace the first occurrence of the placeholder
+		formattedQuery = strings.Replace(formattedQuery, placeholder, value, 1)
+	}
+
+	return formattedQuery
 }

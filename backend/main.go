@@ -43,8 +43,8 @@ func main() {
 	fs := http.FileServer(http.Dir("../frontend"))
 	http.Handle("/", fs)
 
-	// Wrap task handlers with OpenTelemetry instrumentation
-	http.Handle("/tasks", otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Wrap task handlers with OpenTelemetry instrumentation and body tracing
+	http.Handle("/tasks", otelhttp.NewHandler(BodyTracingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET", "OPTIONS":
 			handlers.GetTasks(w, r)
@@ -53,9 +53,9 @@ func main() {
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	}), "tasks"))
+	})), "tasks"))
 
-	http.Handle("/tasks/", otelhttp.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/tasks/", otelhttp.NewHandler(BodyTracingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "DELETE" || r.Method == "OPTIONS" {
 			handlers.DeleteTask(w, r)
 		} else if r.Method == "POST" && len(r.URL.Path) > len("/tasks/") {
@@ -68,7 +68,7 @@ func main() {
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	}), "tasks/*"))
+	})), "tasks/*"))
 
 	// Create server with timeouts
 	srv := &http.Server{

@@ -3,6 +3,7 @@ module todo-app
 go 1.24.5
 
 require (
+	github.com/XSAM/otelsql v0.39.0
 	github.com/mattn/go-sqlite3 v1.14.29
 	go.opentelemetry.io/contrib/bridges/otelslog v0.12.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.62.0

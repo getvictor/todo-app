@@ -70,12 +70,12 @@ func (h *Handlers) GetTasks(w http.ResponseWriter, r *http.Request) {
 		))
 
 	span.SetAttributes(attribute.String("operation", "get_all_tasks"))
-	slog.Info("Getting all tasks")
+	slog.InfoContext(ctx, "Getting all tasks")
 
 	tasks, err := h.db.GetAllTasks(ctx)
 	if err != nil {
 		span.RecordError(err)
-		slog.Error("Error getting tasks", "error", err)
+		slog.ErrorContext(ctx, "Error getting tasks", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		h.recordRequestMetrics(ctx, start, "GET", "/tasks", http.StatusInternalServerError)
 		return
@@ -88,7 +88,7 @@ func (h *Handlers) GetTasks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tasks)
 
-	slog.Info("Successfully retrieved tasks", "count", len(tasks))
+	slog.InfoContext(ctx, "Successfully retrieved tasks", "count", len(tasks))
 	h.recordRequestMetrics(ctx, start, "GET", "/tasks", http.StatusOK)
 }
 
@@ -127,12 +127,12 @@ func (h *Handlers) CreateTask(w http.ResponseWriter, r *http.Request) {
 		attribute.String("operation", "create_task"),
 		attribute.String("task.title", req.Title),
 	)
-	slog.Info("Creating new task", "title", req.Title)
+	slog.InfoContext(ctx, "Creating new task", "title", req.Title)
 
 	task, err := h.db.CreateTask(ctx, req.Title)
 	if err != nil {
 		span.RecordError(err)
-		slog.Error("Error creating task", "error", err)
+		slog.ErrorContext(ctx, "Error creating task", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		h.recordRequestMetrics(ctx, start, "POST", "/tasks", http.StatusInternalServerError)
 		return
@@ -142,7 +142,7 @@ func (h *Handlers) CreateTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(task)
 
-	slog.Info("Task created successfully", "id", task.ID, "title", task.Title)
+	slog.InfoContext(ctx, "Task created successfully", "id", task.ID, "title", task.Title)
 	h.recordRequestMetrics(ctx, start, "POST", "/tasks", http.StatusCreated)
 }
 
@@ -174,17 +174,17 @@ func (h *Handlers) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		attribute.String("operation", "delete_task"),
 		attribute.Int("task.id", id),
 	)
-	slog.Info("Deleting task", "id", id)
+	slog.InfoContext(ctx, "Deleting task", "id", id)
 
 	err = h.db.DeleteTask(ctx, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			slog.Warn("Task not found for deletion", "id", id)
+			slog.WarnContext(ctx, "Task not found for deletion", "id", id)
 			http.Error(w, "Task not found", http.StatusNotFound)
 			h.recordRequestMetrics(ctx, start, "DELETE", "/tasks/:id", http.StatusNotFound)
 		} else {
 			span.RecordError(err)
-			slog.Error("Error deleting task", "error", err, "id", id)
+			slog.ErrorContext(ctx, "Error deleting task", "error", err, "id", id)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			h.recordRequestMetrics(ctx, start, "DELETE", "/tasks/:id", http.StatusInternalServerError)
 		}
@@ -192,7 +192,7 @@ func (h *Handlers) DeleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-	slog.Info("Task deleted successfully", "id", id)
+	slog.InfoContext(ctx, "Task deleted successfully", "id", id)
 	h.recordRequestMetrics(ctx, start, "DELETE", "/tasks/:id", http.StatusNoContent)
 }
 
@@ -225,17 +225,17 @@ func (h *Handlers) CompleteTask(w http.ResponseWriter, r *http.Request) {
 		attribute.String("operation", "complete_task"),
 		attribute.Int("task.id", id),
 	)
-	slog.Info("Completing task", "id", id)
+	slog.InfoContext(ctx, "Completing task", "id", id)
 
 	task, err := h.db.CompleteTask(ctx, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			slog.Warn("Task not found for completion", "id", id)
+			slog.WarnContext(ctx, "Task not found for completion", "id", id)
 			http.Error(w, "Task not found", http.StatusNotFound)
 			h.recordRequestMetrics(ctx, start, "POST", "/tasks/:id/complete", http.StatusNotFound)
 		} else {
 			span.RecordError(err)
-			slog.Error("Error completing task", "error", err, "id", id)
+			slog.ErrorContext(ctx, "Error completing task", "error", err, "id", id)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			h.recordRequestMetrics(ctx, start, "POST", "/tasks/:id/complete", http.StatusInternalServerError)
 		}
@@ -244,7 +244,7 @@ func (h *Handlers) CompleteTask(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(task)
-	slog.Info("Task completed successfully", "id", task.ID, "title", task.Title)
+	slog.InfoContext(ctx, "Task completed successfully", "id", task.ID, "title", task.Title)
 	h.recordRequestMetrics(ctx, start, "POST", "/tasks/:id/complete", http.StatusOK)
 }
 
